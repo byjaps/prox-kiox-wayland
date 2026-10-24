@@ -8,6 +8,16 @@
 Turn a Proxmox VE node's local display into a **kiosk showing the PVE web UI**
 (`https://127.0.0.1:8006`) — and keep it working after kernel upgrades.
 
+## Why this exists
+
+If you lose remote access because of a configuration mistake or a network
+outage, this is the fallback that still works: the node's own display gives you
+the PVE UI without SSH, VPN or a second machine.
+
+And if your mini-rack has a screen, it turns that screen into a graphical
+environment for the cluster — no extra hardware, no VM, no container and no GPU
+passthrough.
+
 Two modes, your choice at install time and switchable in one command:
 
 | Mode | Command | What you get |
