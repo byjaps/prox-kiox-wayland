@@ -11,4 +11,7 @@ pkill -x firefox-esr 2>/dev/null && sleep 1
 # num nó sem monitor o getty nunca é tocado.
 systemctl stop getty@tty1.service 2>/dev/null
 
-exec cage -s -- /usr/bin/firefox-esr --kiosk https://127.0.0.1:8006
+# Modo JANELA (não --kiosk): o Firefox aparece com barra de abas/menus dentro do
+# cage, para se poderem abrir e alternar abas (PVE, router, HA...). O cage ocupa
+# o ecrã todo, mas quem desenha é a janela normal do Firefox.
+exec cage -s -- /usr/bin/firefox-esr --new-window https://127.0.0.1:8006

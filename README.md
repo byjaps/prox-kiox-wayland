@@ -5,8 +5,13 @@
 [![Renderer: cage/Wayland](https://img.shields.io/badge/Renderer-cage%20%2F%20Wayland-4A90D9.svg)](https://github.com/cage-kiosk/cage)
 [![Status: tested on 3-node cluster](https://img.shields.io/badge/Status-tested%20on%203--node%20cluster-brightgreen.svg)](#verified-behaviour)
 
-Turn a Proxmox VE node's local display into a **kiosk showing the PVE web UI**
-(`https://127.0.0.1:8006`) — and keep it working after kernel upgrades.
+Turn a Proxmox VE node's local display into a **browser window showing the PVE
+web UI** (`https://127.0.0.1:8006`) — and keep it working after kernel upgrades.
+
+Firefox runs in **window mode**, not `--kiosk`: the tab bar, address bar and menus
+stay visible, so you can open more tabs (`Ctrl+T`) and reach the node's router,
+Home Assistant or anything else on the LAN from the same screen. `cage` gives that
+single window the whole output, so it still looks like a full-screen kiosk.
 
 This is a re-implementation of the idea behind
 [LegitKnots/Prox-Kiox](https://github.com/LegitKnots/Prox-Kiox) (MIT), with two
@@ -37,10 +42,10 @@ differences that matter in practice:
 
 | Component | Role |
 |---|---|
-| `prox-kiox.service` | Runs `cage` + `firefox-esr --kiosk https://127.0.0.1:8006`. `Type=simple`, `Restart=always`, `RestartSec=10`. |
+| `prox-kiox.service` | Runs `cage` + `firefox-esr --new-window https://127.0.0.1:8006` (window mode, tabs available). `Type=simple`, `Restart=always`, `RestartSec=10`. |
 | `prox-kiox-has-display` | Exit 0 if any `/sys/class/drm/cardN-*/status` is `connected`. Used as `ExecCondition`. |
 | `prox-kiox-guard` + timer | Every minute: start the kiosk if a monitor is attached and it is down, stop it if the monitor went away. |
-| `user.js` | Firefox prefs for a kiosk profile: no session restore, no telemetry, no self-update (ESR comes from apt). |
+| `user.js` | Firefox prefs for the kiosk profile: no session restore, no telemetry, no self-update (ESR comes from apt). |
 
 Behaviour:
 
@@ -93,8 +98,10 @@ Measured on a 3-node Proxmox VE 9.2 cluster (kernel 7.0.14, `lockdown=integrity`
 on all nodes), one shared 1366×768 monitor:
 
 - Node with the monitor: `systemctl is-active prox-kiox` → `active`, `pgrep -x
-  cage` and `pgrep -x firefox-esr` present, PVE login rendered (verified with
-  `grim` screenshots, no X involved).
+  cage` and `pgrep -x firefox-esr` present, the PVE dashboard rendered with tab bar,
+  address bar and menus visible (verified with `grim` screenshots, no X involved),
+  and `cage` holding the `/dev/input/event*` devices of the USB keyboard/touchpad —
+  so `Ctrl+T` and clicking tabs work.
 - Two headless nodes: `Result=exec-condition`, `inactive`, `getty@tty1` still
   active.
 - `kill -9` on Firefox → back within ~10 s.
@@ -120,6 +127,9 @@ on all nodes), one shared 1366×768 monitor:
   an unlocked PVE UI to anyone touching the screen and stores the password on the
   node.
 - The kiosk talks only to `127.0.0.1:8006`; no network egress, no telemetry.
+- Tabs are **not** restored after a restart (the profile has session restore off,
+  so a crash never pops a "restore session" dialog). If you want the tab set to come
+  back, set `user_pref("browser.startup.page", 3);` in `user.js`.
 
 ## Credits
 
