@@ -11,7 +11,11 @@
 set -u
 
 PROX_KIOX_MODE="window"
+PROX_KIOX_IDLE="300"
 [ -r /etc/default/prox-kiox ] && . /etc/default/prox-kiox
+export PROX_KIOX_IDLE
+
+URL="${PROX_KIOX_URL:-https://127.0.0.1:8006}"
 
 case "${PROX_KIOX_MODE:-window}" in
     kiosk)  ARGS="--kiosk" ;;
@@ -30,4 +34,30 @@ pkill -x firefox-esr 2>/dev/null && sleep 1
 # num nó sem monitor o getty nunca é tocado.
 systemctl stop getty@tty1.service 2>/dev/null
 
-exec cage -s -- /usr/bin/firefox-esr $ARGS https://127.0.0.1:8006
+# Ecrã: apaga o monitor por DDC/CI depois de PROX_KIOX_IDLE segundos sem input
+# (300 por omissão) e acorda com a primeira tecla/rato. Arranca em paralelo,
+# assim que o socket Wayland existir; o systemd leva-o consigo ao parar.
+(
+    WD=""
+    for _ in $(seq 1 40); do
+        WD=$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name 'wayland-*' -printf '%f\n' 2>/dev/null | head -1)
+        [ -n "$WD" ] && break
+        sleep 0.5
+    done
+    [ -n "$WD" ] || exit 0
+    # O cage só anuncia idle-notify depois de criar o socket; sem esta pausa o
+    # swayidle liga-se cedo demais e nunca dispara.
+    sleep 3
+    WAYLAND_DISPLAY="$WD" exec /usr/local/bin/prox-kiox-idle
+) &
+
+# Espera pelo pveproxy: depois de um upgrade/restart da PVE o serviço pode
+# arrancar antes da API responder, e o Firefox ficaria com um erro no ecrã.
+if command -v curl >/dev/null 2>&1; then
+    for _ in $(seq 1 60); do
+        if curl -sk -o /dev/null --max-time 3 "$URL"; then break; fi
+        sleep 2
+    done
+fi
+
+exec cage -s -- /usr/bin/firefox-esr $ARGS "$URL"

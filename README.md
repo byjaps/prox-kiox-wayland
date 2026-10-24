@@ -68,6 +68,8 @@ differences that matter in practice:
 | `install.sh` | Same thing in one script, driven by `--kiosk` / `--window` (for a git clone). |
 | `prox-kiox-has-display` | Exit 0 if any `/sys/class/drm/cardN-*/status` is `connected`. Used as `ExecCondition`. |
 | `prox-kiox-guard` + timer | Every minute: start the kiosk if a monitor is attached and it is down, stop it if the monitor went away. |
+| `prox-kiox-idle` | After `PROX_KIOX_IDLE` seconds without input (300 by default) it blanks the monitor over DDC/CI and wakes it on the first key or mouse move. |
+| `prox-kiox-refresh` + timer | Every 15 min: if the PVE ticket has less than 20 min left, restart the service — that renews the cookie and reloads the page, so the kiosk stays logged in past the 2 h ticket lifetime. |
 | `user.js` | Firefox prefs for the kiosk profile: no session restore, no telemetry, no self-update (ESR comes from apt). |
 
 Behaviour:
@@ -78,6 +80,13 @@ Behaviour:
 - **Cable moved to another node** → within ~60 s the old node stops and the new one
   starts, no SSH needed.
 - **Firefox or cage crashes** → systemd restarts it in ~10 s.
+- **Screen idle** → the monitor goes to DPMS standby after 5 min
+  (`PROX_KIOX_IDLE` in `/etc/default/prox-kiox`) and comes back on the first
+  key or mouse movement. DDC/CI is used because `cage` does not implement
+  `wlr-output-power-management` (`wlopm` does not work here); on a node without
+  a DDC-capable display the helper exits silently.
+- **Long uptime** → the PVE ticket lasts 2 h. The refresh timer renews it before
+  it expires, so the kiosk does not fall back to the login form.
 - **Kernel upgrade** → nothing to re-patch: there is no X server and no kernel
   command-line change. `cage` and `firefox-esr` come from Debian and are updated
   by normal `apt` upgrades.
@@ -191,8 +200,13 @@ on all nodes), one shared 1366×768 monitor:
   profile with `ProxmoxUser` (token) and `GuiCap` (capabilities) in `localStorage`.
   `files/prox-kiox-login` runs before each kiosk start, renews the 2 h
   `PVEAuthCookie` in `cookies.sqlite` and leaves the dashboard logged in without
-  a single click. Remove it all with `pveum user token remove kiosk@pve panel &&
-  pveum user delete kiosk@pve && rm -rf /etc/prox-kiox /usr/local/bin/prox-kiox-login`.
+  a single click. The cookie is written as a **non-HttpOnly** cookie: the PVE web
+  client reads it from JavaScript to decide whether the session is alive, so an
+  HttpOnly row is accepted by the API but still shows the login form. A refresh
+  timer renews the ticket every 15 min when less than 20 min are left, so the
+  session survives past the 2 h lifetime. Remove it all with `pveum user token
+  remove kiosk@pve panel && pveum user delete kiosk@pve && rm -rf /etc/prox-kiox
+  /usr/local/bin/prox-kiox-login`.
   **Security:** the token is as powerful as the role you give it, and anyone with
   physical access to the monitor gets that power; the secret sits in
   `/etc/prox-kiox` (mode 700/600) and the password only exists to fetch the

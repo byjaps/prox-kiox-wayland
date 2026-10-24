@@ -1,0 +1,28 @@
+#!/bin/bash
+# Renova o ticket da PVE antes de expirar (2 h).
+#
+# O cookie PVEAuthCookie é escrito no arranque do kiosk, mas a PVE só emite
+# bilhetes de 2 h. Este verificador corre de 15 em 15 min e só reinicia o
+# serviço quando faltam menos de 20 min: o arranque renova o cookie e recarrega
+# a página, sem reinícios desnecessários.
+set -u
+
+DB=$(ls /root/.mozilla/firefox/*.default*/cookies.sqlite 2>/dev/null | head -1)
+[ -n "${DB:-}" ] || exit 0
+
+LEFT=$(python3 - "$DB" <<'PY'
+import sqlite3, sys, time
+try:
+    c = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro&immutable=1", uri=True)
+    row = c.execute("select expiry from moz_cookies where name='PVEAuthCookie'").fetchone()
+    print(int(row[0] / 1000 - time.time()) if row else -1)
+except Exception:
+    print(-1)
+PY
+)
+
+# Sem cookie (-1) não há autologin configurado: não mexer.
+[ "${LEFT:--1}" -lt 0 ] && exit 0
+[ "$LEFT" -gt 1200 ] && exit 0
+
+systemctl restart prox-kiox.service

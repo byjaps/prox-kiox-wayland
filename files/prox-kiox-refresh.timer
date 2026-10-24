@@ -1,0 +1,10 @@
+[Unit]
+Description=Prox-Kiox - verificar o ticket da PVE a cada 15 min
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

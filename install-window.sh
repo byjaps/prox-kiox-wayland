@@ -60,6 +60,10 @@ if [ "${1:-}" = "--uninstall" ]; then
           /usr/local/bin/prox-kiox-has-display \
           /usr/local/bin/prox-kiox-guard \
           /usr/local/bin/prox-kiox-mode \
+          /usr/local/bin/prox-kiox-idle \
+          /usr/local/bin/prox-kiox-refresh \
+          /etc/systemd/system/prox-kiox-refresh.service \
+          /etc/systemd/system/prox-kiox-refresh.timer \
           "$CONF"
     systemctl daemon-reload
     pkill -x firefox-esr 2>/dev/null || true
@@ -70,7 +74,7 @@ fi
 echo "== pacotes =="
 apt-get update -qq
 # `cage` no Debian depende de xwayland; não remover xwayland depois disto.
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cage firefox-esr
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cage firefox-esr ddcutil swayidle
 
 echo "== binários =="
 install -m 0755 /dev/stdin /usr/local/bin/prox-kiox-wl <<'WRAPPER'
@@ -81,7 +85,9 @@ install -m 0755 /dev/stdin /usr/local/bin/prox-kiox-wl <<'WRAPPER'
 set -u
 
 PROX_KIOX_MODE="window"
+PROX_KIOX_IDLE="300"
 [ -r /etc/default/prox-kiox ] && . /etc/default/prox-kiox
+export PROX_KIOX_IDLE
 
 case "${PROX_KIOX_MODE:-window}" in
     kiosk)  ARGS="--kiosk" ;;
@@ -110,6 +116,24 @@ if command -v curl >/dev/null 2>&1; then
         sleep 2
     done
 fi
+
+
+# Ecrã: apaga o monitor por DDC/CI depois de PROX_KIOX_IDLE segundos sem input
+# (300 por omissão) e acorda com a primeira tecla/rato. Arranca em paralelo,
+# assim que o socket Wayland existir; o systemd leva-o consigo ao parar.
+(
+    WD=""
+    for _ in $(seq 1 40); do
+        WD=$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name 'wayland-*' -printf '%f\n' 2>/dev/null | head -1)
+        [ -n "$WD" ] && break
+        sleep 0.5
+    done
+    [ -n "$WD" ] || exit 0
+    # O cage só anuncia idle-notify depois de criar o socket; sem esta pausa o
+    # swayidle liga-se cedo demais e nunca dispara.
+    sleep 3
+    WAYLAND_DISPLAY="$WD" exec /usr/local/bin/prox-kiox-idle
+) &
 
 exec cage -s -- /usr/bin/firefox-esr $ARGS "$URL"
 WRAPPER
@@ -163,6 +187,61 @@ case "${1:-status}" in
 esac
 MODE
 
+install -m 0755 /dev/stdin /usr/local/bin/prox-kiox-idle <<'IDLE'
+#!/bin/bash
+# Apaga o monitor após PROX_KIOX_IDLE segundos sem input e acorda com input.
+# O cage não implementa wlr-output-power-management (wlopm não serve), por isso
+# usa DDC/CI. Sem monitor DDC (nó headless, KVM sem DDC) sai em silêncio.
+set -u
+
+find_bus() { ddcutil detect --brief 2>/dev/null | awk '/I2C bus:/{print $NF; exit}'; }
+
+BUS="$(find_bus)"
+[ -n "${BUS:-}" ] || exit 0
+BUS="${BUS#/dev/i2c-}"
+
+power() { ddcutil -b "$BUS" setvcp d6 "$1" >/dev/null 2>&1 || true; }
+
+case "${1:-}" in
+    --off) power 4; exit 0 ;;
+    --on)  power 1; exit 0 ;;
+esac
+
+# 4 = DPMS standby, 1 = on. Acorda no arranque para o caso de o serviço
+# reiniciar com o ecrã apagado (o novo swayidle não recebia um "resume").
+power 1
+
+exec swayidle -w \
+    timeout "${PROX_KIOX_IDLE:-300}" "$0 --off" \
+    resume "$0 --on"
+IDLE
+
+install -m 0755 /dev/stdin /usr/local/bin/prox-kiox-refresh <<'REFRESH'
+#!/bin/bash
+# Renova o ticket da PVE antes de expirar (2 h). Corre a cada 15 min e só
+# reinicia o serviço quando faltam menos de 20 min: o arranque reescreve o
+# cookie e recarrega a página, sem reinícios desnecessários.
+set -u
+
+DB=$(ls /root/.mozilla/firefox/*.default*/cookies.sqlite 2>/dev/null | head -1)
+[ -n "${DB:-}" ] || exit 0
+
+LEFT=$(python3 - "$DB" <<'PY'
+import sqlite3, sys, time
+try:
+    c = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro&immutable=1", uri=True)
+    row = c.execute("select expiry from moz_cookies where name='PVEAuthCookie'").fetchone()
+    print(int(row[0] / 1000 - time.time()) if row else -1)
+except Exception:
+    print(-1)
+PY
+)
+
+[ "${LEFT:--1}" -lt 0 ] && exit 0
+[ "$LEFT" -gt 1200 ] && exit 0
+systemctl restart prox-kiox.service
+REFRESH
+
 echo "== units =="
 install -m 0644 /dev/stdin /etc/systemd/system/prox-kiox.service <<'UNIT'
 [Unit]
@@ -214,6 +293,29 @@ AccuracySec=5s
 WantedBy=timers.target
 GTIMER
 
+install -m 0644 /dev/stdin /etc/systemd/system/prox-kiox-refresh.service <<'RSVC'
+[Unit]
+Description=Prox-Kiox - renovar o ticket da PVE antes de expirar
+After=prox-kiox.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/prox-kiox-refresh
+RSVC
+
+install -m 0644 /dev/stdin /etc/systemd/system/prox-kiox-refresh.timer <<'RTIMER'
+[Unit]
+Description=Prox-Kiox - verificar o ticket da PVE a cada 15 min
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
+RTIMER
+
 touch "$LOG"
 # Escreve sempre: este instalador é explícito quanto ao modo (janela).
 printf '# Modo do Prox-Kiox: window (janela com abas) ou kiosk (ecrã inteiro)\nPROX_KIOX_MODE=%s\n' "$MODE" > "$CONF"
@@ -250,7 +352,8 @@ fi
 
 echo "== systemd =="
 systemctl daemon-reload
-systemctl enable prox-kiox.service prox-kiox-guard.timer >/dev/null
+systemctl enable prox-kiox.service prox-kiox-guard.timer prox-kiox-refresh.timer >/dev/null
+systemctl restart prox-kiox-refresh.timer
 systemctl restart prox-kiox-guard.timer
 # Se já estiver ativo, `start` não faz nada e o modo novo não era aplicado:
 # reiniciar. Num nó sem monitor o ExecCondition salta o arranque (sem falha).

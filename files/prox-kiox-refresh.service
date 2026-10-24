@@ -1,0 +1,7 @@
+[Unit]
+Description=Prox-Kiox - renovar o ticket da PVE antes de expirar
+After=prox-kiox.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/prox-kiox-refresh

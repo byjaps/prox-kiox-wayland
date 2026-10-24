@@ -70,7 +70,7 @@ def escrever_cookie(db, valor, validade):
             "insert into moz_cookies"
             " (originAttributes, name, value, host, path, expiry, lastAccessed,"
             "  creationTime, isSecure, isHttpOnly, inBrowserElement, sameSite)"
-            " values ('', 'PVEAuthCookie', ?, ?, '/', ?, ?, ?, 1, 1, 0, 1)",
+            " values ('', 'PVEAuthCookie', ?, ?, '/', ?, ?, ?, 1, 0, 0, 1)",
             (valor, HOST, validade, agora, agora),
         )
         con.commit()

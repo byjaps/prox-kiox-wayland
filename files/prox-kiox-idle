@@ -1,0 +1,34 @@
+#!/bin/bash
+# Blank the local monitor after a period without input, and wake it on input.
+#
+# cage does not implement wlr-output-power-management, so wlopm cannot be used.
+# DDC/CI (ddcutil) talks to the monitor over the GPU's I2C bus and works with
+# any compositor. If no DDC-capable display is found, exit quietly: headless
+# nodes and KVM switches without DDC are normal.
+set -u
+
+find_bus() {
+    ddcutil detect --brief 2>/dev/null | awk '/I2C bus:/{print $NF; exit}'
+}
+
+BUS="$(find_bus)"
+[ -n "${BUS:-}" ] || exit 0
+BUS="${BUS#/dev/i2c-}"
+
+power() {
+    ddcutil -b "$BUS" setvcp d6 "$1" >/dev/null 2>&1 || true
+}
+
+case "${1:-}" in
+    --off) power 4; exit 0 ;;
+    --on)  power 1; exit 0 ;;
+esac
+
+# 4 = DPMS standby (panel off, monitor still answers DDC), 1 = on.
+# Acorda sempre no arranque: se o serviço reiniciar com o ecrã em standby, o
+# novo swayidle não recebe um "resume" e o monitor ficaria apagado.
+power 1
+
+exec swayidle -w \
+    timeout "${PROX_KIOX_IDLE:-300}" "$0 --off" \
+    resume "$0 --on"
