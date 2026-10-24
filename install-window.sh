@@ -93,6 +93,11 @@ URL="${PROX_KIOX_URL:-https://127.0.0.1:8006}"
 # Um firefox órfão deixa o perfil bloqueado e abre o diálogo "already running".
 pkill -x firefox-esr 2>/dev/null && sleep 1
 
+# Autologin (opcional): se /usr/local/bin/prox-kiox-login estiver instalado,
+# renova o ticket da PVE no perfil antes de o Firefox abrir. Sem ele, o kiosk
+# mostra o formulário de login normal.
+/usr/local/bin/prox-kiox-login 2>/dev/null || true
+
 # Liberta o tty1 (consola de texto da PVE) só no instante em que o kiosk arranca;
 # num nó sem monitor o getty nunca é tocado.
 systemctl stop getty@tty1.service 2>/dev/null

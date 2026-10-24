@@ -21,6 +21,11 @@ esac
 # Um firefox órfão deixa o perfil bloqueado e abre o diálogo "already running".
 pkill -x firefox-esr 2>/dev/null && sleep 1
 
+# Autologin (opcional): se estiver configurado, renova o ticket da PVE no perfil
+# antes de o Firefox abrir. Sem isto, o kiosk mostra o formulário de login.
+# O Firefox está fechado neste instante, logo escrever na cookies.sqlite é seguro.
+/usr/local/bin/prox-kiox-login 2>/dev/null || true
+
 # Liberta o tty1 (consola de texto da PVE) só no momento em que o kiosk arranca;
 # num nó sem monitor o getty nunca é tocado.
 systemctl stop getty@tty1.service 2>/dev/null

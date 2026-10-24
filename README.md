@@ -174,10 +174,20 @@ on all nodes), one shared 1366×768 monitor:
 - `-s` in `cage -s` allows VT switching, so `Alt+F2` still gives you a console.
 - If the HDMI link is not up yet at 30 s after boot, the guard timer starts the
   kiosk on its next tick — the autostart does not depend on EDID timing.
-- Login uses the Firefox profile's saved session ("Remember me"). Scripted
-  auto-login with a plaintext password is deliberately not implemented: it hands
-  an unlocked PVE UI to anyone touching the screen and stores the password on the
-  node.
+- **Optional auto-login (token + ticket).** PVE 9 does not accept an API token in
+  the login form, and its web client does not keep a session across browser
+  restarts. `tools/setup_autologin.sh` (run once, as root, on the node) creates a
+  dedicated `kiosk@pve` user with a non-expiring API token and seeds the Firefox
+  profile with `ProxmoxUser` (token) and `GuiCap` (capabilities) in `localStorage`.
+  `files/prox-kiox-login` runs before each kiosk start, renews the 2 h
+  `PVEAuthCookie` in `cookies.sqlite` and leaves the dashboard logged in without
+  a single click. Remove it all with `pveum user token remove kiosk@pve panel &&
+  pveum user delete kiosk@pve && rm -rf /etc/prox-kiox /usr/local/bin/prox-kiox-login`.
+  **Security:** the token is as powerful as the role you give it, and anyone with
+  physical access to the monitor gets that power; the secret sits in
+  `/etc/prox-kiox` (mode 700/600) and the password only exists to fetch the
+  capabilities once. Prefer a narrower role than `PVEAdmin` if the screen is in a
+  shared room.
 - The kiosk talks only to `127.0.0.1:8006`; no network egress, no telemetry.
 - Tabs are **not** restored after a restart (the profile has session restore off,
   so a crash never pops a "restore session" dialog). If you want the tab set to come
