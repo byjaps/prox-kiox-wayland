@@ -11,7 +11,9 @@ rm -f /etc/systemd/system/prox-kiox.service \
       /etc/systemd/system/prox-kiox-guard.timer \
       /usr/local/bin/prox-kiox-wl \
       /usr/local/bin/prox-kiox-has-display \
-      /usr/local/bin/prox-kiox-guard
+      /usr/local/bin/prox-kiox-guard \
+      /usr/local/bin/prox-kiox-mode \
+      /etc/default/prox-kiox
 systemctl daemon-reload
 pkill -x firefox-esr 2>/dev/null
 echo "Prox-Kiox (Wayland) removido. Log mantido em /var/log/prox-kiox.log"

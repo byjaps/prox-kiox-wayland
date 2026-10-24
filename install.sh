@@ -1,11 +1,21 @@
 #!/bin/bash
 # Prox-Kiox (Wayland/cage) - instalação idempotente num nó Proxmox VE.
-# Uso:  ./install.sh        (como root, no nó; leva a pasta files/ ao lado)
+# Uso:  ./install.sh [--window|--kiosk]   (como root, no nó; leva files/ ao lado)
+#   --window (omissão) -> Firefox em janela, com barra de abas
+#   --kiosk            -> Firefox em ecrã inteiro, sem barras
 # Repõe: binários em /usr/local/bin, units em /etc/systemd/system, user.js no
 # perfil do Firefox, e ativa o serviço + o vigia (timer de 1 min).
 set -euo pipefail
 [ "$EUID" -eq 0 ] || { echo "ERRO: correr como root" >&2; exit 1; }
 SRC=$(cd "$(dirname "$0")" && pwd)
+
+MODO=""
+case "${1:-}" in
+    --kiosk)  MODO="kiosk" ;;
+    --window) MODO="window" ;;
+    "")       ;;
+    *)        echo "ERRO: opção desconhecida '$1' (use --window ou --kiosk)" >&2; exit 1 ;;
+esac
 
 echo "== pacotes =="
 apt-get update -qq
@@ -15,10 +25,18 @@ echo "== ficheiros =="
 install -m 0755 "$SRC/files/prox-kiox-wl"          /usr/local/bin/prox-kiox-wl
 install -m 0755 "$SRC/files/prox-kiox-has-display" /usr/local/bin/prox-kiox-has-display
 install -m 0755 "$SRC/files/prox-kiox-guard"       /usr/local/bin/prox-kiox-guard
+install -m 0755 "$SRC/files/prox-kiox-mode"        /usr/local/bin/prox-kiox-mode
 install -m 0644 "$SRC/files/prox-kiox.service"       /etc/systemd/system/prox-kiox.service
 install -m 0644 "$SRC/files/prox-kiox-guard.service" /etc/systemd/system/prox-kiox-guard.service
 install -m 0644 "$SRC/files/prox-kiox-guard.timer"   /etc/systemd/system/prox-kiox-guard.timer
 touch /var/log/prox-kiox.log
+
+# Modo: só escreve se o pedido for explícito ou se ainda não houver ficheiro
+# (um `install.sh` sem argumentos numa máquina já configurada não muda o modo).
+if [ -n "$MODO" ] || [ ! -r /etc/default/prox-kiox ]; then
+    printf '# Modo do Prox-Kiox: window (janela com abas) ou kiosk (ecrã inteiro)\nPROX_KIOX_MODE=%s\n' "${MODO:-window}" > /etc/default/prox-kiox
+fi
+echo "  modo: $(. /etc/default/prox-kiox && echo "${PROX_KIOX_MODE:-window}")  (trocar: prox-kiox-mode kiosk|window)"
 
 echo "== perfil do Firefox =="
 shopt -s nullglob
@@ -33,7 +51,13 @@ echo "== systemd =="
 systemctl daemon-reload
 systemctl enable prox-kiox.service prox-kiox-guard.timer >/dev/null
 systemctl restart prox-kiox-guard.timer
-systemctl start prox-kiox.service || true   # ExecCondition pode saltar (sem monitor)
+# Se já estiver ativo, `start` não faz nada e o modo novo não era aplicado:
+# reiniciar. Num nó sem monitor o ExecCondition salta o arranque (sem falha).
+if systemctl is-active --quiet prox-kiox.service; then
+    systemctl restart prox-kiox.service || true
+else
+    systemctl start prox-kiox.service || true
+fi
 sleep 6
 
 echo "== estado =="

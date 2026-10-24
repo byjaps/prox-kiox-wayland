@@ -1,8 +1,22 @@
 #!/bin/bash
-# Prox-Kiox (Wayland): arranca cage + Firefox ESR em kiosk sobre a PVE web UI.
+# Prox-Kiox (Wayland): arranca cage + Firefox ESR sobre a PVE web UI.
 # Corre como serviço systemd (prox-kiox.service). Sem X11, logo sem I/O ports
 # (não depende de lockdown=none no kernel).
+#
+# Modo de arranque em /etc/default/prox-kiox (PROX_KIOX_MODE):
+#   window (omissão) -> janela normal do Firefox, com barra de abas/menus
+#   kiosk            -> ecrã inteiro sem barras (--kiosk), só a UI da PVE
+# Trocar: `prox-kiox-mode kiosk` / `prox-kiox-mode window` (ou editar o ficheiro
+# e `systemctl restart prox-kiox`).
 set -u
+
+PROX_KIOX_MODE="window"
+[ -r /etc/default/prox-kiox ] && . /etc/default/prox-kiox
+
+case "${PROX_KIOX_MODE:-window}" in
+    kiosk)  ARGS="--kiosk" ;;
+    *)      ARGS="--new-window" ;;
+esac
 
 # Um firefox órfão deixa o perfil bloqueado e abre o diálogo "already running".
 pkill -x firefox-esr 2>/dev/null && sleep 1
@@ -11,7 +25,4 @@ pkill -x firefox-esr 2>/dev/null && sleep 1
 # num nó sem monitor o getty nunca é tocado.
 systemctl stop getty@tty1.service 2>/dev/null
 
-# Modo JANELA (não --kiosk): o Firefox aparece com barra de abas/menus dentro do
-# cage, para se poderem abrir e alternar abas (PVE, router, HA...). O cage ocupa
-# o ecrã todo, mas quem desenha é a janela normal do Firefox.
-exec cage -s -- /usr/bin/firefox-esr --new-window https://127.0.0.1:8006
+exec cage -s -- /usr/bin/firefox-esr $ARGS https://127.0.0.1:8006
