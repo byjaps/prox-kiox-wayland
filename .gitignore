@@ -1,0 +1,4 @@
+legacy/
+cleanup-x11.sh
+*.log
+__pycache__/

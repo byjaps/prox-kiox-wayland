@@ -1,0 +1,26 @@
+[Unit]
+Description=Prox-Kiox - kiosk da PVE web UI no ecra local (Wayland/cage)
+Documentation=https://github.com/LegitKnots/Prox-Kiox
+After=systemd-user-sessions.service pveproxy.service
+Wants=pveproxy.service
+
+[Service]
+Type=simple
+Environment=HOME=/root
+Environment=MOZ_ENABLE_WAYLAND=1
+Environment=XDG_RUNTIME_DIR=/run/prox-kiox
+Environment=WLR_LIBINPUT_NO_DEVICES=1
+Environment=MOZ_CRASHREPORTER_DISABLE=1
+RuntimeDirectory=prox-kiox
+RuntimeDirectoryMode=0700
+# Sem monitor ligado o serviço é saltado (headless) em vez de falhar em ciclo.
+ExecCondition=/usr/local/bin/prox-kiox-has-display
+ExecStart=/usr/local/bin/prox-kiox-wl
+# Firefox/cage a cair -> volta a subir sozinho.
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/prox-kiox.log
+StandardError=append:/var/log/prox-kiox.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+#!/bin/bash
+# 0 = há pelo menos um monitor ligado (conector DRM "connected"); 1 = headless.
+# Usado como ExecCondition do prox-kiox.service: numa máquina sem monitor o
+# serviço é saltado (não fica em falha, não bloqueia o boot).
+n=$(cat /sys/class/drm/card[0-9]-*/status 2>/dev/null | grep -c '^connected$')
+[ "${n:-0}" -gt 0 ]

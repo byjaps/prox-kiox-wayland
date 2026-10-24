@@ -1,0 +1,6 @@
+[Unit]
+Description=Prox-Kiox guard (arranca/para o kiosk conforme o monitor)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/prox-kiox-guard

@@ -1,0 +1,19 @@
+#!/bin/bash
+# Vigia do kiosk: corre por timer (1 min).
+#  - monitor ligado  e kiosk parado  -> arranca (cobre o cabo trocado de nó)
+#  - monitor desligado e kiosk ativo -> pára (não fica a desenhar para o nada)
+#  - kiosk vivo                      -> não faz nada
+set -u
+LOG=/var/log/prox-kiox.log
+if /usr/local/bin/prox-kiox-has-display; then
+    if ! systemctl is-active --quiet prox-kiox.service; then
+        echo "$(date -Is) guard: monitor detetado, a arrancar kiosk" >> "$LOG"
+        systemctl start prox-kiox.service
+    fi
+else
+    if systemctl is-active --quiet prox-kiox.service; then
+        echo "$(date -Is) guard: sem monitor, a parar kiosk" >> "$LOG"
+        systemctl stop prox-kiox.service
+    fi
+fi
+exit 0
