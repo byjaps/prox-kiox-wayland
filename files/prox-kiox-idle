@@ -19,6 +19,11 @@ power() {
     ddcutil -b "$BUS" setvcp d6 "$1" >/dev/null 2>&1 || true
 }
 
+# 0/off = nunca apagar (omissão): não arrancar sequer o swayidle.
+if [ "${1:-}" = "" ] && { [ "${PROX_KIOX_IDLE:-0}" = "0" ] || [ "${PROX_KIOX_IDLE:-0}" = "off" ]; }; then
+    exit 0
+fi
+
 case "${1:-}" in
     --off) power 4; exit 0 ;;
     --on)  power 1; exit 0 ;;

@@ -68,7 +68,7 @@ differences that matter in practice:
 | `install.sh` | Same thing in one script, driven by `--kiosk` / `--window` (for a git clone). |
 | `prox-kiox-has-display` | Exit 0 if any `/sys/class/drm/cardN-*/status` is `connected`. Used as `ExecCondition`. |
 | `prox-kiox-guard` + timer | Every minute: start the kiosk if a monitor is attached and it is down, stop it if the monitor went away. |
-| `prox-kiox-idle` | After `PROX_KIOX_IDLE` seconds without input (300 by default) it blanks the monitor over DDC/CI and wakes it on the first key or mouse move. |
+| `prox-kiox-idle` | Optional. With `PROX_KIOX_IDLE` set to a number of seconds it blanks the monitor over DDC/CI and wakes it on the first key or mouse move. Default `0`: never blank, the screen stays on. |
 | `prox-kiox-refresh` + timer | Every 15 min: if the PVE ticket has less than 20 min left, restart the service — that renews the cookie and reloads the page, so the kiosk stays logged in past the 2 h ticket lifetime. |
 | `user.js` | Firefox prefs for the kiosk profile: no session restore, no telemetry, no self-update (ESR comes from apt). |
 
@@ -80,11 +80,12 @@ Behaviour:
 - **Cable moved to another node** → within ~60 s the old node stops and the new one
   starts, no SSH needed.
 - **Firefox or cage crashes** → systemd restarts it in ~10 s.
-- **Screen idle** → the monitor goes to DPMS standby after 5 min
-  (`PROX_KIOX_IDLE` in `/etc/default/prox-kiox`) and comes back on the first
+- **Screen idle (opt-in)** → by default the screen stays on. To let it blank
+  after 5 minutes, add `PROX_KIOX_IDLE=300` to `/etc/default/prox-kiox` and
+  restart the service (`0` or `off` disables it again). It wakes on the first
   key or mouse movement. DDC/CI is used because `cage` does not implement
-  `wlr-output-power-management` (`wlopm` does not work here); on a node without
-  a DDC-capable display the helper exits silently.
+  `wlr-output-power-management` (`wlopm` does not work here); without a
+  DDC-capable display the helper exits silently.
 - **Long uptime** → the PVE ticket lasts 2 h. The refresh timer renews it before
   it expires, so the kiosk does not fall back to the login form.
 - **Kernel upgrade** → nothing to re-patch: there is no X server and no kernel

@@ -112,6 +112,11 @@ fi
 # Ecrã: apaga o monitor por DDC/CI depois de PROX_KIOX_IDLE segundos sem input
 # (300 por omissão) e acorda com a primeira tecla/rato. Arranca em paralelo,
 # assim que o socket Wayland existir; o systemd leva-o consigo ao parar.
+# Acorda o monitor em cada arranque: se o serviço reiniciar com o ecrã em
+# standby (ou se o standby for desligado a meio), não fica preto.
+/usr/local/bin/prox-kiox-idle --on 2>/dev/null || true
+
+if [ "${PROX_KIOX_IDLE:-0}" != "0" ] && [ "${PROX_KIOX_IDLE:-0}" != "off" ]; then
 (
     WD=""
     for _ in $(seq 1 40); do
@@ -125,6 +130,7 @@ fi
     sleep 3
     WAYLAND_DISPLAY="$WD" exec /usr/local/bin/prox-kiox-idle
 ) &
+fi
 
 exec cage -s -- /usr/bin/firefox-esr $ARGS "$URL"
 WRAPPER
@@ -170,7 +176,7 @@ case "${1:-status}" in
     status|"") echo "modo atual: $(atual)"; echo "serviço: $(systemctl is-active prox-kiox.service 2>/dev/null)" ;;
     window|kiosk)
         [ "$EUID" -eq 0 ] || { echo "ERRO: precisa de root" >&2; exit 1; }
-        printf '# Modo do Prox-Kiox: window (janela com abas) ou kiosk (ecrã inteiro)\nPROX_KIOX_MODE=%s\n' "$1" > "$CONF"
+        printf '# Modo do Prox-Kiox: window (janela com abas) ou kiosk (ecrã inteiro)\nPROX_KIOX_MODE=%s\n# Segundos sem input até apagar o ecrã; 0 = nunca apagar.\nPROX_KIOX_IDLE=%s\n' "$1" "$(idle)" > "$CONF"
         echo "modo -> $1"
         systemctl restart prox-kiox.service && echo "serviço reiniciado"
         ;;
@@ -192,6 +198,11 @@ BUS="$(find_bus)"
 BUS="${BUS#/dev/i2c-}"
 
 power() { ddcutil -b "$BUS" setvcp d6 "$1" >/dev/null 2>&1 || true; }
+
+# 0/off = nunca apagar (omissão): não arrancar sequer o swayidle.
+if [ "${1:-}" = "" ] && { [ "${PROX_KIOX_IDLE:-0}" = "0" ] || [ "${PROX_KIOX_IDLE:-0}" = "off" ]; }; then
+    exit 0
+fi
 
 case "${1:-}" in
     --off) power 4; exit 0 ;;
@@ -309,7 +320,7 @@ RTIMER
 
 touch "$LOG"
 # Escreve sempre: este instalador é explícito quanto ao modo (kiosk).
-printf '# Modo do Prox-Kiox: window (janela com abas) ou kiosk (ecrã inteiro)\nPROX_KIOX_MODE=%s\n' "$MODE" > "$CONF"
+printf '# Modo do Prox-Kiox: window (janela com abas) ou kiosk (ecrã inteiro)\nPROX_KIOX_MODE=%s\n# Segundos sem input até apagar o ecrã; 0 = nunca apagar (omissão).\nPROX_KIOX_IDLE=%s\n' "$MODE" "${PROX_KIOX_IDLE:-0}" > "$CONF"
 
 echo "== perfil do Firefox =="
 shopt -s nullglob

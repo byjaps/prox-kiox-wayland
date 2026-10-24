@@ -11,7 +11,7 @@
 set -u
 
 PROX_KIOX_MODE="window"
-PROX_KIOX_IDLE="300"
+PROX_KIOX_IDLE="0"
 [ -r /etc/default/prox-kiox ] && . /etc/default/prox-kiox
 export PROX_KIOX_IDLE
 
@@ -37,6 +37,11 @@ systemctl stop getty@tty1.service 2>/dev/null
 # Ecrã: apaga o monitor por DDC/CI depois de PROX_KIOX_IDLE segundos sem input
 # (300 por omissão) e acorda com a primeira tecla/rato. Arranca em paralelo,
 # assim que o socket Wayland existir; o systemd leva-o consigo ao parar.
+# Acorda o monitor em cada arranque: se o serviço reiniciar com o ecrã em
+# standby (ou se o standby for desligado a meio), não fica preto.
+/usr/local/bin/prox-kiox-idle --on 2>/dev/null || true
+
+if [ "${PROX_KIOX_IDLE:-0}" != "0" ] && [ "${PROX_KIOX_IDLE:-0}" != "off" ]; then
 (
     WD=""
     for _ in $(seq 1 40); do
@@ -50,6 +55,7 @@ systemctl stop getty@tty1.service 2>/dev/null
     sleep 3
     WAYLAND_DISPLAY="$WD" exec /usr/local/bin/prox-kiox-idle
 ) &
+fi
 
 # Espera pelo pveproxy: depois de um upgrade/restart da PVE o serviço pode
 # arrancar antes da API responder, e o Firefox ficaria com um erro no ecrã.
