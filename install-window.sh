@@ -121,9 +121,28 @@ fi
 # Ecrã: apaga o monitor por DDC/CI depois de PROX_KIOX_IDLE segundos sem input
 # (300 por omissão) e acorda com a primeira tecla/rato. Arranca em paralelo,
 # assim que o socket Wayland existir; o systemd leva-o consigo ao parar.
-# Acorda o monitor em cada arranque: se o serviço reiniciar com o ecrã em
-# standby (ou se o standby for desligado a meio), não fica preto.
-/usr/local/bin/prox-kiox-idle --on 2>/dev/null || true
+#
+# Só ACORDA o monitor se ele já estiver ligado. O serviço reinicia sozinho a
+# cada ~2 h (renovação do cookie da PVE) e o `--on` incondicional acendia o ecrã
+# de madrugada com a casa a dormir. Agora, se o monitor estiver em standby fica
+# em standby e o swayidle acorda-o na primeira tecla/rato; com o standby
+# desligado (IDLE=0/off) acorda sempre, senão podia ficar preto sem ninguém a
+# acordá-lo.
+monitor_em_standby() {
+    local bus modo
+    bus=$(ddcutil detect --brief 2>/dev/null | awk '/I2C bus:/{print $NF; exit}')
+    [ -n "$bus" ] || return 1
+    modo=$(ddcutil -b "${bus#/dev/i2c-}" getvcp d6 2>/dev/null) || return 1
+    case "$modo" in
+        *"sl=0x01"*) return 1 ;;   # ligado
+        *"sl=0x"*)   return 0 ;;   # standby / suspend / off
+        *)           return 1 ;;   # sem leitura: como antes (acordar)
+    esac
+}
+
+if [ "${PROX_KIOX_IDLE:-0}" = "0" ] || [ "${PROX_KIOX_IDLE:-0}" = "off" ] || ! monitor_em_standby; then
+    /usr/local/bin/prox-kiox-idle --on 2>/dev/null || true
+fi
 
 if [ "${PROX_KIOX_IDLE:-0}" != "0" ] && [ "${PROX_KIOX_IDLE:-0}" != "off" ]; then
 (
@@ -251,6 +270,20 @@ PY
 
 [ "${LEFT:--1}" -lt 0 ] && exit 0
 [ "$LEFT" -gt 1200 ] && exit 0
+
+# NÃO acordar o ecrã: o reinício do kiosk provoca um modeset e o monitor sai do
+# standby com o sinal novo (medido: 0x02 -> 0x01 ~4 s depois). Com o monitor em
+# standby não se renova: o próximo tick, já com alguém à frente do ecrã,
+# reinicia e renova o cookie.
+bus=$(ddcutil detect --brief 2>/dev/null | awk '/I2C bus:/{print $NF; exit}')
+if [ -n "${bus:-}" ]; then
+    modo=$(ddcutil -b "${bus#/dev/i2c-}" getvcp d6 2>/dev/null || true)
+    case "$modo" in
+        *"sl=0x01"*) : ;;                                   # ligado: pode reiniciar
+        *"sl=0x"*)   echo "[$(date -Is)] ecra em standby: renovacao adiada"; exit 0 ;;
+    esac
+fi
+
 systemctl restart prox-kiox.service
 REFRESH
 

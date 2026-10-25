@@ -25,4 +25,17 @@ PY
 [ "${LEFT:--1}" -lt 0 ] && exit 0
 [ "$LEFT" -gt 1200 ] && exit 0
 
+# NÃO acordar o ecrã: o reinício do kiosk provoca um modeset e o monitor sai do
+# standby com o sinal novo (medido: 0x02 -> 0x01 ~4 s depois). Com o monitor em
+# standby não se renova: o próximo tick, já com alguém à frente do ecrã,
+# reinicia e renova o cookie.
+bus=$(ddcutil detect --brief 2>/dev/null | awk '/I2C bus:/{print $NF; exit}')
+if [ -n "${bus:-}" ]; then
+    modo=$(ddcutil -b "${bus#/dev/i2c-}" getvcp d6 2>/dev/null || true)
+    case "$modo" in
+        *"sl=0x01"*) : ;;                                   # ligado: pode reiniciar
+        *"sl=0x"*)   echo "[$(date -Is)] ecra em standby: renovacao adiada"; exit 0 ;;
+    esac
+fi
+
 systemctl restart prox-kiox.service
