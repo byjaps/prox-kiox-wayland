@@ -122,25 +122,12 @@ fi
 # (300 por omissão) e acorda com a primeira tecla/rato. Arranca em paralelo,
 # assim que o socket Wayland existir; o systemd leva-o consigo ao parar.
 #
-# Só ACORDA o monitor se ele já estiver ligado. O serviço reinicia sozinho a
-# cada ~2 h (renovação do cookie da PVE) e o `--on` incondicional acendia o ecrã
-# de madrugada com a casa a dormir. Agora, se o monitor estiver em standby fica
-# em standby e o swayidle acorda-o na primeira tecla/rato; com o standby
-# desligado (IDLE=0/off) acorda sempre, senão podia ficar preto sem ninguém a
-# acordá-lo.
-monitor_em_standby() {
-    local bus modo
-    bus=$(ddcutil detect --brief 2>/dev/null | awk '/I2C bus:/{print $NF; exit}')
-    [ -n "$bus" ] || return 1
-    modo=$(ddcutil -b "${bus#/dev/i2c-}" getvcp d6 2>/dev/null) || return 1
-    case "$modo" in
-        *"sl=0x01"*) return 1 ;;   # ligado
-        *"sl=0x"*)   return 0 ;;   # standby / suspend / off
-        *)           return 1 ;;   # sem leitura: como antes (acordar)
-    esac
-}
-
-if [ "${PROX_KIOX_IDLE:-0}" = "0" ] || [ "${PROX_KIOX_IDLE:-0}" = "off" ] || ! monitor_em_standby; then
+# Com o standby ligado, o `prox-kiox-idle` que arranca abaixo acende o monitor e
+# só o apaga ao fim de PROX_KIOX_IDLE segundos sem input — um restart acende o
+# ecrã por desenho (é o que evita ficar preto sem ninguém a acordá-lo). Quem
+# impede o ecrã de acender de madrugada é o `prox-kiox-refresh`, que adia a
+# renovação do cookie com o monitor em standby.
+if [ "${PROX_KIOX_IDLE:-0}" = "0" ] || [ "${PROX_KIOX_IDLE:-0}" = "off" ]; then
     /usr/local/bin/prox-kiox-idle --on 2>/dev/null || true
 fi
 

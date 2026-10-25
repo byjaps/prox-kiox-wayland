@@ -88,14 +88,19 @@ Behaviour:
   DDC-capable display the helper exits silently.
 - **Long uptime** → the PVE ticket lasts 2 h. The refresh timer renews it before
   it expires, so the kiosk does not fall back to the login form. While the
-  monitor is in DPMS standby (nobody in front of it) the renewal is postponed:
-  restarting the kiosk forces a modeset and the monitor wakes up with the new
-  signal. The next tick, with the screen on, renews the ticket, and the first
-  key/mouse press after a long blank also schedules a renewal (`--ao-acordar`),
-  so you do not come back to a login form.
-- **Blanked screen is not turned on by a restart** → a service start only powers
-  the monitor on if it was already on (or if blanking is disabled); the idle
-  helper then blanks it again after `PROX_KIOX_IDLE` seconds.
+  monitor is in DPMS standby (nobody in front of it) the renewal is postponed
+  instead of restarting the kiosk: a restart always lights the screen up (the
+  idle helper powers it on at start, see below), which is wrong at 3 am. The
+  next tick, with the screen on, renews the ticket, and the first key/mouse
+  press after a long blank also schedules a renewal (`--ao-acordar`), so you do
+  not come back to a login form.
+- **A restart lights the screen** → with `PROX_KIOX_IDLE` set, `prox-kiox-idle`
+  powers the monitor on at start and only blanks it after `PROX_KIOX_IDLE`
+  seconds without input. That is deliberate: a restart must never leave a black
+  screen whose first keypress does nothing (a fresh `swayidle` still believes
+  the user is active, so it emits no `resume`). Consequence: anything that
+  restarts the service wakes the screen — hence the postponed renewal above.
+
 - **Kernel upgrade** → nothing to re-patch: there is no X server and no kernel
   command-line change. `cage` and `firefox-esr` come from Debian and are updated
   by normal `apt` upgrades.
