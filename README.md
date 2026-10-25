@@ -90,7 +90,9 @@ Behaviour:
   it expires, so the kiosk does not fall back to the login form. While the
   monitor is in DPMS standby (nobody in front of it) the renewal is postponed:
   restarting the kiosk forces a modeset and the monitor wakes up with the new
-  signal. The next tick, with the screen on, renews the ticket.
+  signal. The next tick, with the screen on, renews the ticket, and the first
+  key/mouse press after a long blank also schedules a renewal (`--ao-acordar`),
+  so you do not come back to a login form.
 - **Blanked screen is not turned on by a restart** → a service start only powers
   the monitor on if it was already on (or if blanking is disabled); the idle
   helper then blanks it again after `PROX_KIOX_IDLE` seconds.

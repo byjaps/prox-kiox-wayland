@@ -26,7 +26,13 @@ fi
 
 case "${1:-}" in
     --off) power 4; exit 0 ;;
-    --on)  power 1; exit 0 ;;
+    --on)
+        power 1
+        # Se o cookie estiver a expirar (ficou a expirar enquanto o ecrã esteve em
+        # standby), agenda a renovação: o utilizador está aqui agora.
+        /usr/local/bin/prox-kiox-refresh --ao-acordar >/dev/null 2>&1 &
+        exit 0
+        ;;
 esac
 
 # 4 = DPMS standby (panel off, monitor still answers DDC), 1 = on.

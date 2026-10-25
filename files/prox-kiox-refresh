@@ -10,7 +10,8 @@ set -u
 DB=$(ls /root/.mozilla/firefox/*.default*/cookies.sqlite 2>/dev/null | head -1)
 [ -n "${DB:-}" ] || exit 0
 
-LEFT=$(python3 - "$DB" <<'PY'
+segundos_de_cookie() {
+    python3 - "$DB" <<'PY'
 import sqlite3, sys, time
 try:
     c = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro&immutable=1", uri=True)
@@ -19,7 +20,27 @@ try:
 except Exception:
     print(-1)
 PY
-)
+}
+
+LEFT=$(segundos_de_cookie)
+
+# --ao-acordar: chamado pelo prox-kiox-idle quando o monitor acorda. Com o ecrã
+# em standby a renovação é adiada, por isso quem voltar ao kiosk ao fim de horas
+# apanhava o formulário de login até ao tick seguinte (≤15 min). Aqui, com
+# alguém à frente do ecrã, agenda-se um reinício (que renova o cookie e
+# recarrega a página) 2 s depois — desanexado do serviço, senão o reinício
+# matava quem o pediu. Guarda de 15 min para nunca entrar em ciclo de reinícios.
+if [ "${1:-}" = "--ao-acordar" ]; then
+    [ "$LEFT" -gt 1200 ] && exit 0
+    STAMP=/run/prox-kiox-renovacao.stamp
+    if [ -f "$STAMP" ] && [ $(( $(date +%s) - $(stat -c %Y "$STAMP") )) -lt 900 ]; then
+        exit 0
+    fi
+    touch "$STAMP"
+    systemd-run --quiet --collect --on-active=2 --unit="prox-kiox-renew-$(date +%s)" \
+        systemctl restart prox-kiox.service >/dev/null 2>&1 || true
+    exit 0
+fi
 
 # Sem cookie (-1) não há autologin configurado: não mexer.
 [ "${LEFT:--1}" -lt 0 ] && exit 0
