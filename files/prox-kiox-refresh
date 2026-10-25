@@ -7,6 +7,14 @@
 # a página, sem reinícios desnecessários.
 set -u
 
+# Só a UI da PVE local tem ticket para renovar. Com outra URL (Home Assistant,
+# Grafana, ...) este timer não tem nada para fazer e sai já.
+[ -r /etc/default/prox-kiox ] && . /etc/default/prox-kiox 2>/dev/null || true
+case "${PROX_KIOX_URL:-}" in
+    ""|https://127.0.0.1:8006|https://localhost:8006) : ;;
+    *) exit 0 ;;
+esac
+
 DB=$(ls /root/.mozilla/firefox/*.default*/cookies.sqlite 2>/dev/null | head -1)
 [ -n "${DB:-}" ] || exit 0
 

@@ -17,6 +17,13 @@ export PROX_KIOX_IDLE
 
 URL="${PROX_KIOX_URL:-https://127.0.0.1:8006}"
 
+# Autologin e renovação do ticket só existem para a UI da PVE local: com outra
+# página (Home Assistant, Grafana, Glances, ...) não há ticket para renovar.
+case "$URL" in
+    https://127.0.0.1:8006|https://localhost:8006) PVE_LOCAL=1 ;;
+    *)                                             PVE_LOCAL=0 ;;
+esac
+
 case "${PROX_KIOX_MODE:-window}" in
     kiosk)  ARGS="--kiosk" ;;
     *)      ARGS="--new-window" ;;
@@ -28,7 +35,7 @@ pkill -x firefox-esr 2>/dev/null && sleep 1
 # Autologin (opcional): se estiver configurado, renova o ticket da PVE no perfil
 # antes de o Firefox abrir. Sem isto, o kiosk mostra o formulário de login.
 # O Firefox está fechado neste instante, logo escrever na cookies.sqlite é seguro.
-/usr/local/bin/prox-kiox-login 2>/dev/null || true
+[ "$PVE_LOCAL" = 1 ] && { /usr/local/bin/prox-kiox-login 2>/dev/null || true; }
 
 # Liberta o tty1 (consola de texto da PVE) só no momento em que o kiosk arranca;
 # num nó sem monitor o getty nunca é tocado.
@@ -65,7 +72,10 @@ fi
 
 # Espera pelo pveproxy: depois de um upgrade/restart da PVE o serviço pode
 # arrancar antes da API responder, e o Firefox ficaria com um erro no ecrã.
-if command -v curl >/dev/null 2>&1; then
+# Só para a PVE local: com uma página remota (Home Assistant, Grafana, ...) uma
+# espera de minutos com a máquina em baixo dava um ecrã negro — o Firefox mostra
+# antes a página de erro, que se recarrega quando o serviço voltar.
+if [ "$PVE_LOCAL" = 1 ] && command -v curl >/dev/null 2>&1; then
     for _ in $(seq 1 60); do
         if curl -sk -o /dev/null --max-time 3 "$URL"; then break; fi
         sleep 2

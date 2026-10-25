@@ -1,0 +1,50 @@
+#!/bin/bash
+# prox-kiox-url [URL|pve|status]  — que página o kiosk abre.
+#   prox-kiox-url                              mostra a URL atual
+#   prox-kiox-url https://192.168.1.42:8123  abre o Home Assistant
+#   prox-kiox-url https://192.168.1.77:61208 abre o Glances, etc.
+#   prox-kiox-url pve                          volta à UI da PVE local
+# Sem PROX_KIOX_URL definido o kiosk abre https://127.0.0.1:8006.
+set -u
+CONF=/etc/default/prox-kiox
+DEFAULT_PVE="https://127.0.0.1:8006"
+
+conf_get() {
+    [ -r "$CONF" ] || return 0
+    awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,"");print;exit}' "$CONF"
+}
+
+set_key() { # chave valor — muda só essa linha
+    local tmp
+    tmp=$(mktemp) || return 1
+    [ -r "$CONF" ] && grep -v "^[[:space:]]*$1=" "$CONF" > "$tmp"
+    printf '%s=%s\n' "$1" "$2" >> "$tmp"
+    cat "$tmp" > "$CONF"
+    rm -f "$tmp"
+}
+
+aplicar() { # $1 = valor ("" = omissão PVE)
+    [ "$(id -u)" -eq 0 ] || { echo "ERRO: precisa de root" >&2; exit 1; }
+    set_key PROX_KIOX_URL "$1"
+    if [ -n "$1" ]; then echo "URL -> $1"; else echo "URL -> $DEFAULT_PVE (omissão)"; fi
+    if [ -n "$1" ] && command -v curl >/dev/null 2>&1; then
+        curl -sk -o /dev/null --max-time 4 "$1" \
+            || echo "AVISO: $1 não respondeu agora; o kiosk tenta à mesma." >&2
+    fi
+    if systemctl restart prox-kiox.service 2>/dev/null; then
+        echo "serviço reiniciado"
+    else
+        echo "serviço não arrancou (sem monitor ligado?) — aplica-se no próximo arranque"
+    fi
+}
+
+case "${1:-status}" in
+    status|"")
+        u=$(conf_get PROX_KIOX_URL)
+        echo "URL: ${u:-$DEFAULT_PVE}"
+        [ -n "$u" ] && echo "omissão: $DEFAULT_PVE  (voltar: prox-kiox-url pve)"
+        ;;
+    pve|default)       aplicar "" ;;
+    http://*|https://*) aplicar "$1" ;;
+    *) echo "uso: prox-kiox-url [URL|pve|status]" >&2; exit 1 ;;
+esac

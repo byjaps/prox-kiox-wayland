@@ -6,7 +6,8 @@
 [![Status: tested on 3-node cluster](https://img.shields.io/badge/Status-tested%20on%203--node%20cluster-brightgreen.svg)](#verified-behaviour)
 
 Turn a Proxmox VE node's local display into a **kiosk showing the PVE web UI**
-(`https://127.0.0.1:8006`) — and keep it working after kernel upgrades.
+(`https://127.0.0.1:8006`) — or any other page you point it at (Home Assistant,
+Grafana, Glances, …) — and keep it working after kernel upgrades.
 
 ## Why this exists
 
@@ -62,8 +63,9 @@ differences that matter in practice:
 
 | Component | Role |
 |---|---|
-| `prox-kiox.service` | Runs `cage` + `firefox-esr` over `https://127.0.0.1:8006`, in the mode set by `/etc/default/prox-kiox` (`--new-window` or `--kiosk`). `Type=simple`, `Restart=always`, `RestartSec=10`. |
-| `prox-kiox-mode` | `window` / `kiosk` / `status`: writes `/etc/default/prox-kiox` and restarts the service. |
+| `prox-kiox.service` | Runs `cage` + `firefox-esr` over the page in `/etc/default/prox-kiox` (`PROX_KIOX_URL`, default `https://127.0.0.1:8006`), in the mode also set there (`--new-window` or `--kiosk`). `Type=simple`, `Restart=always`, `RestartSec=10`. |
+| `prox-kiox-mode` | `window` / `kiosk` / `status`: rewrites the mode key in `/etc/default/prox-kiox` and restarts the service. Leaves `PROX_KIOX_IDLE` and `PROX_KIOX_URL` untouched. |
+| `prox-kiox-url` | `https://…` / `pve` / `status`: which page the kiosk opens. Empty/short value means the PVE UI. |
 | `install-kiosk.sh` / `install-window.sh` | Standalone installers, one per version, with an embedded `--uninstall`. |
 | `install.sh` | Same thing in one script, driven by `--kiosk` / `--window` (for a git clone). |
 | `prox-kiox-has-display` | Exit 0 if any `/sys/class/drm/cardN-*/status` is `connected`. Used as `ExecCondition`. |
@@ -143,6 +145,44 @@ Both scripts are idempotent and re-runnable. Each one writes its own mode
 explicitly, so `./install-kiosk.sh` always ends in kiosk and `./install-window.sh`
 always ends in window. To remove everything: `./install-kiosk.sh --uninstall`
 (or the window script — the cleanup is the same).
+
+### Another page instead of the PVE UI (optional)
+
+The kiosk is not locked to Proxmox: any URL works. Useful when the screen sits
+next to the rack and you would rather see Home Assistant, Grafana, Glances or a
+dashboard than the PVE tree.
+
+```bash
+prox-kiox-url https://192.168.1.42:8123   # Home Assistant
+prox-kiox-url https://192.168.1.77:61208   # Glances
+prox-kiox-url                               # which page is configured?
+prox-kiox-url pve                           # back to https://127.0.0.1:8006
+```
+
+Or set it once at install time:
+
+```bash
+PROX_KIOX_URL=https://192.168.1.42:8123 ./install-kiosk.sh
+```
+
+The value lives in `/etc/default/prox-kiox` as `PROX_KIOX_URL`; empty means the
+PVE UI. The installers and `prox-kiox-mode` rewrite only the key they own, so the
+URL (and `PROX_KIOX_IDLE`) survive a reinstall or a mode switch.
+
+Two PVE-only helpers turn themselves off when the URL is not
+`https://127.0.0.1:8006`: the ticket refresh (`prox-kiox-refresh`) and
+`prox-kiox-login` inside the wrapper. With another page there is no PVE ticket to
+renew and nothing to seed.
+
+Third-party pages, three practical notes:
+
+- **Self-signed HTTPS** (Home Assistant, most homelab UIs) stops on the
+  certificate warning the first time. Accept the exception once with a
+  keyboard/mouse; the profile keeps it.
+- **Login** is not automatic like the PVE one: tick "keep me logged in" in that
+  app, or the screen shows its login form after every restart.
+- In `window` mode you get tabs (`Ctrl+T`), so you can keep the PVE UI as the
+  default page and still reach anything else without changing the URL.
 
 The repo also keeps the original two-in-one `install.sh` (`./install.sh --window`
 / `--kiosk`, with no flag keeping the mode already configured) for anyone who

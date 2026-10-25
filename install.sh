@@ -26,15 +26,23 @@ install -m 0755 "$SRC/files/prox-kiox-wl"          /usr/local/bin/prox-kiox-wl
 install -m 0755 "$SRC/files/prox-kiox-has-display" /usr/local/bin/prox-kiox-has-display
 install -m 0755 "$SRC/files/prox-kiox-guard"       /usr/local/bin/prox-kiox-guard
 install -m 0755 "$SRC/files/prox-kiox-mode"        /usr/local/bin/prox-kiox-mode
+install -m 0755 "$SRC/files/prox-kiox-url"         /usr/local/bin/prox-kiox-url
 install -m 0644 "$SRC/files/prox-kiox.service"       /etc/systemd/system/prox-kiox.service
 install -m 0644 "$SRC/files/prox-kiox-guard.service" /etc/systemd/system/prox-kiox-guard.service
 install -m 0644 "$SRC/files/prox-kiox-guard.timer"   /etc/systemd/system/prox-kiox-guard.timer
 touch /var/log/prox-kiox.log
 
-# Modo: só escreve se o pedido for explícito ou se ainda não houver ficheiro
-# (um `install.sh` sem argumentos numa máquina já configurada não muda o modo).
-if [ -n "$MODO" ] || [ ! -r /etc/default/prox-kiox ]; then
-    printf '# Modo do Prox-Kiox: window (janela com abas) ou kiosk (ecrã inteiro)\nPROX_KIOX_MODE=%s\n' "${MODO:-window}" > /etc/default/prox-kiox
+# Modo: só muda se o pedido for explícito (um `install.sh` sem argumentos numa
+# máquina já configurada não toca no modo). As outras chaves — PROX_KIOX_IDLE e
+# PROX_KIOX_URL — são preservadas; antes eram apagadas nesta reescrita.
+if [ -n "$MODO" ]; then
+    tmp=$(mktemp)
+    [ -r /etc/default/prox-kiox ] && grep -v '^[[:space:]]*PROX_KIOX_MODE=' /etc/default/prox-kiox > "$tmp" || true
+    printf 'PROX_KIOX_MODE=%s\n' "$MODO" >> "$tmp"
+    cat "$tmp" > /etc/default/prox-kiox
+    rm -f "$tmp"
+elif [ ! -r /etc/default/prox-kiox ]; then
+    printf '# Prox-Kiox - definicoes do kiosk (window|kiosk, IDLE em segundos, URL)\nPROX_KIOX_MODE=window\nPROX_KIOX_IDLE=0\nPROX_KIOX_URL=\n' > /etc/default/prox-kiox
 fi
 echo "  modo: $(. /etc/default/prox-kiox && echo "${PROX_KIOX_MODE:-window}")  (trocar: prox-kiox-mode kiosk|window)"
 

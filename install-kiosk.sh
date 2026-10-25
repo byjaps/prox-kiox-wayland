@@ -31,6 +31,11 @@
 #   ./install-kiosk.sh              instala / atualiza
 #   ./install-kiosk.sh --uninstall  remove tudo (mantém o log)
 #
+# Página aberta: por omissão a UI da PVE local (https://127.0.0.1:8006). Para
+# abrir outra coisa (Home Assistant, Grafana, Glances, ...) usa-se
+# `prox-kiox-url https://...` depois de instalar — ou, no install,
+# `PROX_KIOX_URL=https://... ./install-kiosk.sh`.
+#
 # Este ficheiro é autónomo: não precisa da pasta files/ nem de git clone.
 # =============================================================================
 set -euo pipefail
@@ -53,6 +58,7 @@ if [ "${1:-}" = "--uninstall" ]; then
           /usr/local/bin/prox-kiox-has-display \
           /usr/local/bin/prox-kiox-guard \
           /usr/local/bin/prox-kiox-mode \
+          /usr/local/bin/prox-kiox-url \
           /usr/local/bin/prox-kiox-idle \
           /usr/local/bin/prox-kiox-refresh \
           /etc/systemd/system/prox-kiox-refresh.service \
@@ -87,13 +93,21 @@ esac
 
 URL="${PROX_KIOX_URL:-https://127.0.0.1:8006}"
 
+# Autologin e renovação do ticket só existem para a UI da PVE local: com outra
+# página (Home Assistant, Grafana, Glances, ...) não há ticket nenhum para
+# renovar, e o prox-kiox-login não tem o que fazer.
+case "$URL" in
+    https://127.0.0.1:8006|https://localhost:8006) PVE_LOCAL=1 ;;
+    *)                                             PVE_LOCAL=0 ;;
+esac
+
 # Um firefox órfão deixa o perfil bloqueado e abre o diálogo "already running".
 pkill -x firefox-esr 2>/dev/null && sleep 1
 
 # Autologin (opcional): se /usr/local/bin/prox-kiox-login estiver instalado,
 # renova o ticket da PVE no perfil antes de o Firefox abrir. Sem ele, o kiosk
-# mostra o formulário de login normal.
-/usr/local/bin/prox-kiox-login 2>/dev/null || true
+# mostra o formulário de login normal. Só se aplica à UI da PVE local.
+[ "$PVE_LOCAL" = 1 ] && { /usr/local/bin/prox-kiox-login 2>/dev/null || true; }
 
 # Liberta o tty1 (consola de texto da PVE) só no instante em que o kiosk arranca;
 # num nó sem monitor o getty nunca é tocado.
@@ -101,7 +115,10 @@ systemctl stop getty@tty1.service 2>/dev/null
 
 # Espera pelo pveproxy: depois de um upgrade/restart da PVE o serviço pode
 # arrancar antes da API responder, e o Firefox ficaria com um erro no ecrã.
-if command -v curl >/dev/null 2>&1; then
+# Só para a PVE local: com uma página remota (Home Assistant, Grafana, ...) uma
+# espera de minutos com a máquina em baixo dava um ecrã negro — o Firefox mostra
+# antes a página de erro, que se recarrega quando o serviço voltar.
+if [ "$PVE_LOCAL" = 1 ] && command -v curl >/dev/null 2>&1; then
     for _ in $(seq 1 60); do
         if curl -sk -o /dev/null --max-time 3 "$URL"; then break; fi
         sleep 2
@@ -175,20 +192,95 @@ GUARD
 install -m 0755 /dev/stdin /usr/local/bin/prox-kiox-mode <<'MODE'
 #!/bin/bash
 # prox-kiox-mode [status|window|kiosk]  — troca o modo e reinicia o serviço.
+# Preserva as outras chaves de /etc/default/prox-kiox (PROX_KIOX_IDLE, PROX_KIOX_URL).
 set -u
 CONF=/etc/default/prox-kiox
-atual() { local m="kiosk"; [ -r "$CONF" ] && . "$CONF" && m="${PROX_KIOX_MODE:-kiosk}"; echo "$m"; }
+
+conf_get() { # chave -> valor (vazio se não existir)
+    [ -r "$CONF" ] || return 0
+    awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,"");print;exit}' "$CONF"
+}
+
+set_key() { # chave valor — muda só essa linha; o resto do ficheiro fica igual
+    local tmp
+    tmp=$(mktemp) || return 1
+    [ -r "$CONF" ] && grep -v "^[[:space:]]*$1=" "$CONF" > "$tmp"
+    printf '%s=%s\n' "$1" "$2" >> "$tmp"
+    cat "$tmp" > "$CONF"
+    rm -f "$tmp"
+}
+
 case "${1:-status}" in
-    status|"") echo "modo atual: $(atual)"; echo "serviço: $(systemctl is-active prox-kiox.service 2>/dev/null)" ;;
+    status|"")
+        u=$(conf_get PROX_KIOX_URL)
+        echo "modo atual: $(conf_get PROX_KIOX_MODE)"
+        if [ -n "$u" ]; then echo "URL:         $u"
+        else echo "URL:         https://127.0.0.1:8006 (omissão)"; fi
+        echo "serviço: $(systemctl is-active prox-kiox.service 2>/dev/null)"
+        ;;
     window|kiosk)
         [ "$EUID" -eq 0 ] || { echo "ERRO: precisa de root" >&2; exit 1; }
-        printf '# Modo do Prox-Kiox: window (janela com abas) ou kiosk (ecrã inteiro)\nPROX_KIOX_MODE=%s\n# Segundos sem input até apagar o ecrã; 0 = nunca apagar.\nPROX_KIOX_IDLE=%s\n' "$1" "$(idle)" > "$CONF"
+        [ -r "$CONF" ] || printf '# Prox-Kiox - definicoes do kiosk\nPROX_KIOX_IDLE=0\nPROX_KIOX_URL=\n' > "$CONF"
+        set_key PROX_KIOX_MODE "$1"
         echo "modo -> $1"
         systemctl restart prox-kiox.service && echo "serviço reiniciado"
         ;;
     *) echo "uso: prox-kiox-mode [window|kiosk|status]" >&2; exit 1 ;;
 esac
 MODE
+
+install -m 0755 /dev/stdin /usr/local/bin/prox-kiox-url <<'URLCMD'
+#!/bin/bash
+# prox-kiox-url [URL|pve|status]  — que página o kiosk abre.
+#   prox-kiox-url                              mostra a URL atual
+#   prox-kiox-url https://192.168.1.42:8123  abre o Home Assistant
+#   prox-kiox-url https://192.168.1.77:61208 abre o Glances, etc.
+#   prox-kiox-url pve                          volta à UI da PVE local
+# Sem PROX_KIOX_URL definido o kiosk abre https://127.0.0.1:8006.
+set -u
+CONF=/etc/default/prox-kiox
+DEFAULT_PVE="https://127.0.0.1:8006"
+
+conf_get() {
+    [ -r "$CONF" ] || return 0
+    awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,"");print;exit}' "$CONF"
+}
+
+set_key() { # chave valor — muda só essa linha
+    local tmp
+    tmp=$(mktemp) || return 1
+    [ -r "$CONF" ] && grep -v "^[[:space:]]*$1=" "$CONF" > "$tmp"
+    printf '%s=%s\n' "$1" "$2" >> "$tmp"
+    cat "$tmp" > "$CONF"
+    rm -f "$tmp"
+}
+
+aplicar() { # $1 = valor ("" = omissão PVE)
+    [ "$(id -u)" -eq 0 ] || { echo "ERRO: precisa de root" >&2; exit 1; }
+    set_key PROX_KIOX_URL "$1"
+    if [ -n "$1" ]; then echo "URL -> $1"; else echo "URL -> $DEFAULT_PVE (omissão)"; fi
+    if [ -n "$1" ] && command -v curl >/dev/null 2>&1; then
+        curl -sk -o /dev/null --max-time 4 "$1" \
+            || echo "AVISO: $1 não respondeu agora; o kiosk tenta à mesma." >&2
+    fi
+    if systemctl restart prox-kiox.service 2>/dev/null; then
+        echo "serviço reiniciado"
+    else
+        echo "serviço não arrancou (sem monitor ligado?) — aplica-se no próximo arranque"
+    fi
+}
+
+case "${1:-status}" in
+    status|"")
+        u=$(conf_get PROX_KIOX_URL)
+        echo "URL: ${u:-$DEFAULT_PVE}"
+        [ -n "$u" ] && echo "omissão: $DEFAULT_PVE  (voltar: prox-kiox-url pve)"
+        ;;
+    pve|default)       aplicar "" ;;
+    http://*|https://*) aplicar "$1" ;;
+    *) echo "uso: prox-kiox-url [URL|pve|status]" >&2; exit 1 ;;
+esac
+URLCMD
 
 install -m 0755 /dev/stdin /usr/local/bin/prox-kiox-idle <<'IDLE'
 #!/bin/bash
@@ -236,6 +328,14 @@ install -m 0755 /dev/stdin /usr/local/bin/prox-kiox-refresh <<'REFRESH'
 # reinicia o serviço quando faltam menos de 20 min: o arranque reescreve o
 # cookie e recarrega a página, sem reinícios desnecessários.
 set -u
+
+# Só a UI da PVE local tem ticket para renovar. Com outra URL (Home Assistant,
+# Grafana, ...) este timer não tem nada para fazer e sai já.
+[ -r /etc/default/prox-kiox ] && . /etc/default/prox-kiox 2>/dev/null || true
+case "${PROX_KIOX_URL:-}" in
+    ""|https://127.0.0.1:8006|https://localhost:8006) : ;;
+    *) exit 0 ;;
+esac
 
 DB=$(ls /root/.mozilla/firefox/*.default*/cookies.sqlite 2>/dev/null | head -1)
 [ -n "${DB:-}" ] || exit 0
@@ -366,8 +466,21 @@ WantedBy=timers.target
 RTIMER
 
 touch "$LOG"
-# Escreve sempre: este instalador é explícito quanto ao modo (kiosk).
-printf '# Modo do Prox-Kiox: window (janela com abas) ou kiosk (ecrã inteiro)\nPROX_KIOX_MODE=%s\n# Segundos sem input até apagar o ecrã; 0 = nunca apagar (omissão).\nPROX_KIOX_IDLE=%s\n' "$MODE" "${PROX_KIOX_IDLE:-0}" > "$CONF"
+# Escreve sempre o modo: este instalador é explícito quanto a ele (kiosk). O que
+# o utilizador já tenha afinado no ficheiro (IDLE, URL) é preservado — antes era
+# apagado em cada instalação e em cada `prox-kiox-mode`.
+idle_atual=""; [ -r "$CONF" ] && idle_atual=$(awk -F= '$1=="PROX_KIOX_IDLE"{sub(/^[^=]*=/,"");print;exit}' "$CONF")
+url_atual="";  [ -r "$CONF" ] && url_atual=$(awk -F= '$1=="PROX_KIOX_URL"{sub(/^[^=]*=/,"");print;exit}' "$CONF")
+cat > "$CONF" <<CONF_EOF
+# Prox-Kiox — definições do kiosk (aplicadas no arranque do serviço).
+# window (janela com abas) ou kiosk (ecrã inteiro).
+PROX_KIOX_MODE=$MODE
+# Segundos sem input até apagar o ecrã; 0 = nunca apagar (omissão).
+PROX_KIOX_IDLE=${PROX_KIOX_IDLE:-${idle_atual:-0}}
+# Página que o kiosk abre; vazio = UI da PVE local.
+# Trocar: prox-kiox-url https://192.168.1.42:8123   (voltar: prox-kiox-url pve)
+PROX_KIOX_URL=${PROX_KIOX_URL:-${url_atual:-}}
+CONF_EOF
 
 echo "== perfil do Firefox =="
 shopt -s nullglob
