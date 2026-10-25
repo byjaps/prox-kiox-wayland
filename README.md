@@ -248,6 +248,10 @@ on all nodes), one shared 1366×768 monitor:
 - Two headless nodes: `Result=exec-condition`, `inactive`, `getty@tty1` still
   active.
 - `kill -9` on Firefox → back within ~10 s.
+- **Rescue console**: `Ctrl+Alt+F2` gives a root login on `tty2` and
+  `Ctrl+Alt+F1` returns to the kiosk, still `active`; the same VT switch was
+  checked from the shell (`chvt 2` / `chvt 1`, `fgconsole` 2 → 1) so it can be
+  verified on a remote node without touching the keyboard.
 - Both modes on the same node, switched with `prox-kiox-mode`: `kiosk` renders the
   PVE UI with no bars at all; `window` brings back the tab bar, and a synthetic
   `Ctrl+T` (`wtype`) opens a second tab inside the single `cage` window.
