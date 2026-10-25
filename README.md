@@ -204,6 +204,27 @@ manual exception.)
 
 Log: `/var/log/prox-kiox.log`.
 
+## Starting or restarting
+
+The installer leaves the kiosk running, and the unit is `enabled`, so a reboot
+brings it back on its own on the node that has a monitor attached. To drive it
+by hand (over SSH — `cage` owns the local screen — or from the `tty1` console
+via `Alt+F2`):
+
+```bash
+systemctl start prox-kiox      # start it (no-op if already running)
+systemctl restart prox-kiox    # restart it now
+systemctl status prox-kiox     # is it up? why not?
+systemctl is-active prox-kiox  # one-word answer: active / inactive
+```
+
+**Closed the Firefox window?** Nothing to do: the unit runs with
+`Restart=always` and `RestartSec=10`, so systemd brings the kiosk back about ten
+seconds after the window is closed or Firefox/`cage` dies. Use `systemctl restart
+prox-kiox` only if you do not want to wait. On a headless node the unit stays
+`inactive` with `Result=exec-condition` until a monitor is plugged in; the guard
+timer then starts it within a minute.
+
 ## Uninstall
 
 ```bash
