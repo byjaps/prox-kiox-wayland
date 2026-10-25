@@ -208,8 +208,8 @@ Log: `/var/log/prox-kiox.log`.
 
 The installer leaves the kiosk running, and the unit is `enabled`, so a reboot
 brings it back on its own on the node that has a monitor attached. To drive it
-by hand (over SSH — `cage` owns the local screen — or from the `tty1` console
-via `Alt+F2`):
+by hand (over SSH, or on the machine itself with `Ctrl+Alt+F2` for the rescue
+console on `tty2` — `Ctrl+Alt+F1` goes back to the kiosk):
 
 ```bash
 systemctl start prox-kiox      # start it (no-op if already running)
@@ -265,7 +265,10 @@ on all nodes), one shared 1366×768 monitor:
 - `getty@tty1` is stopped **inside the wrapper**, not via `Conflicts=` in the unit:
   a `Conflicts` is applied when the job is queued, even if `ExecCondition` then
   fails, and it would kill the text console on headless nodes.
-- `-s` in `cage -s` allows VT switching, so `Alt+F2` still gives you a console.
+- `cage -s` allows VT switching. `getty@tty1` is stopped for the kiosk, so the
+  wrapper starts a **rescue console on `tty2`** at every kiosk start:
+  `Ctrl+Alt+F2` gives a root login, `Ctrl+Alt+F1` returns to the kiosk.
+  `Alt+F2` on its own does nothing — that keystroke goes to Firefox.
 - If the HDMI link is not up yet at 30 s after boot, the guard timer starts the
   kiosk on its next tick — the autostart does not depend on EDID timing.
 - **Optional auto-login (token + ticket).** PVE 9 does not accept an API token in

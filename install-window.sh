@@ -121,6 +121,10 @@ pkill -x firefox-esr 2>/dev/null && sleep 1
 # Liberta o tty1 (consola de texto da PVE) só no instante em que o kiosk arranca;
 # num nó sem monitor o getty nunca é tocado.
 systemctl stop getty@tty1.service 2>/dev/null
+# Consola de socorro: o tty1 fica entregue ao cage, por isso Ctrl+Alt+F2 tem de
+# encontrar um getty — senão o nó fica sem consola local (parar o kiosk não
+# resolve: o prox-kiox-guard.timer volta a arrancá-lo em menos de um minuto).
+systemctl start getty@tty2.service 2>/dev/null || true
 
 # Espera pelo pveproxy: depois de um upgrade/restart da PVE o serviço pode
 # arrancar antes da API responder, e o Firefox ficaria com um erro no ecrã.
